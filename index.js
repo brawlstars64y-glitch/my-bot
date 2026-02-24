@@ -88,3 +88,9 @@ bot.command('stop', (ctx) => {
 
 bot.launch();
 console.log("✅ BOT ONLINE");
+const http = require("http");
+
+http.createServer((req, res) => {
+  res.write("Bot Running");
+  res.end();
+}).listen(process.env.PORT || 3000);
