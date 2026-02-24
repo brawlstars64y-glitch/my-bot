@@ -1,1 +1,16 @@
-
+{
+  "name": "max-black-bot",
+  "version": "1.0.0",
+  "description": "Anti-AFK Minecraft Bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "telegraf": "^4.16.3",
+    "bedrock-protocol": "latest"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
