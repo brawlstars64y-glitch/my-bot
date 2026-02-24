@@ -7,7 +7,7 @@ const http = require('http');
 process.on('uncaughtException', err => console.log("UNCAUGHT:", err));
 process.on('unhandledRejection', err => console.log("UNHANDLED:", err));
 
-const TOKEN = "YOUR_NEW_TOKEN";
+const TOKEN = "8682386496:AAFPfrgs8DrLUfjBYyihpojPB21WsvgcU8Y";
 const bot = new Telegraf(TOKEN);
 
 let activeClient = null;
