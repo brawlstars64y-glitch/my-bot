@@ -1,27 +1,35 @@
-const { Telegraf, Markup } = require('telegraf');
+const { Telegraf } = require('telegraf');
 const bedrock = require('bedrock-protocol');
 const { Authflow } = require('prismarine-auth');
-const fs = require('fs');
+const http = require('http');
 
-const TOKEN = "PUT_YOUR_NEW_TOKEN_HERE";
+// حماية من الكرش
+process.on('uncaughtException', err => console.log("UNCAUGHT:", err));
+process.on('unhandledRejection', err => console.log("UNHANDLED:", err));
+
+const TOKEN = "YOUR_NEW_TOKEN";
 const bot = new Telegraf(TOKEN);
 
-let activeConnections = {};
+let activeClient = null;
 
-// ========== START ==========
+// أمر البدء
 bot.start((ctx) => {
-    ctx.reply("🔥 أرسل IP:PORT للسيرفر\nمثال:\nplay.server.com:19132");
+    ctx.reply("🔥 أرسل IP:PORT\nمثال:\nplay.server.com:19132");
 });
 
-// ========== استلام IP ==========
+// استقبال IP
 bot.on('text', async (ctx) => {
-    const text = ctx.message.text;
 
-    if (!text.includes(':')) return;
+    if (!ctx.message.text.includes(':')) return;
 
-    const [host, port] = text.split(':');
+    const [host, port] = ctx.message.text.split(':');
 
-    ctx.reply("⏳ جاري الاتصال...");
+    if (activeClient) {
+        ctx.reply("⚠️ البوت متصل بالفعل. اكتب /stop أولاً.");
+        return;
+    }
+
+    ctx.reply("⏳ جاري الاتصال... أول مرة سيطلب تسجيل Xbox في Logs");
 
     try {
 
@@ -30,7 +38,7 @@ bot.on('text', async (ctx) => {
             port: parseInt(port),
             version: 'auto',
             authflow: new Authflow(
-                "./auth",
+                "/tmp/auth",   // مهم لـ Railway
                 undefined,
                 {
                     flow: 'live',
@@ -39,12 +47,12 @@ bot.on('text', async (ctx) => {
             )
         });
 
-        activeConnections[ctx.chat.id] = client;
+        activeClient = client;
 
         client.on('spawn', () => {
             ctx.reply("✅ دخل البوت السيرفر بنجاح!");
 
-            // Anti AFK حركة بسيطة
+            // Anti AFK حركة خفيفة
             setInterval(() => {
                 try {
                     client.write('player_auth_input', {
@@ -59,38 +67,38 @@ bot.on('text', async (ctx) => {
             }, 20000);
         });
 
-        client.on('disconnect', (packet) => {
-            ctx.reply("❌ تم فصل البوت من السيرفر");
-            delete activeConnections[ctx.chat.id];
+        client.on('disconnect', () => {
+            ctx.reply("❌ تم فصل البوت");
+            activeClient = null;
         });
 
         client.on('error', (err) => {
-            ctx.reply("❌ خطأ:\n" + err.message);
-            delete activeConnections[ctx.chat.id];
+            ctx.reply("❌ خطأ: " + err.message);
+            activeClient = null;
         });
 
     } catch (e) {
         ctx.reply("❌ فشل الاتصال");
+        activeClient = null;
     }
 });
 
-// ========== إيقاف ==========
+// أمر الإيقاف
 bot.command('stop', (ctx) => {
-    const client = activeConnections[ctx.chat.id];
-    if (client) {
-        client.disconnect();
-        delete activeConnections[ctx.chat.id];
+    if (activeClient) {
+        activeClient.disconnect();
+        activeClient = null;
         ctx.reply("🛑 تم إيقاف البوت");
     } else {
         ctx.reply("البوت غير متصل");
     }
 });
 
-bot.launch();
-console.log("✅ BOT ONLINE");
-const http = require("http");
+// تشغيل البوت
+bot.launch().then(() => console.log("✅ BOT ONLINE"));
 
+// مهم جداً لـ Railway حتى لا يطفئ المشروع
 http.createServer((req, res) => {
-  res.write("Bot Running");
-  res.end();
+    res.write("Bot Running");
+    res.end();
 }).listen(process.env.PORT || 3000);
