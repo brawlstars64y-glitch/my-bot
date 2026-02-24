@@ -1,185 +1,90 @@
 const { Telegraf, Markup } = require('telegraf');
 const bedrock = require('bedrock-protocol');
-const http = require('http');
+const { Authflow } = require('prismarine-auth');
+const fs = require('fs');
 
-// 1. إعدادات البوت - ضع التوكن الخاص بك هنا
-const TOKEN = "8682386496:AAFPfrgs8DrLUfjBYyihpojPB21WsvgcU8Y";
+const TOKEN = "PUT_YOUR_NEW_TOKEN_HERE";
 const bot = new Telegraf(TOKEN);
 
-// ذاكرة حفظ البيانات
-const userServers = {};
-const activeConnections = {};
+let activeConnections = {};
 
-// --- الواجهة الرئيسية الفخمة ---
+// ========== START ==========
 bot.start((ctx) => {
-    const userId = ctx.from.id;
-    if (!userServers[userId]) userServers[userId] = [];
-
-    ctx.replyWithMarkdown(
-        `*┓━━ـ⚙️ لـوحـة تـحـكـم مـاكس بـلاك 🔥ـ━━┏*\n\n` +
-        `أهلاً بك يا بطل في نظام الإدارة المتقدم.\n` +
-        `• حالة النظام: *نشط وجاهز* ✅\n` +
-        `• الإصدار: *Auto-Detection* 🚀\n\n` +
-        `*استخدم الأزرار أدناه للتحكم:*`,
-        Markup.inlineKeyboard([
-            [Markup.button.callback('➕ إضـافـة سـيـرفـر جـديـد', 'add_server')],
-            [Markup.button.callback('🖥️ سـيـرفـراتـي', 'my_servers')],
-            [Markup.button.url('📢 قناة المطور', 'https://t.me/aternosbot24')]
-        ])
-    );
+    ctx.reply("🔥 أرسل IP:PORT للسيرفر\nمثال:\nplay.server.com:19132");
 });
 
-// --- إضافة سيرفر جديد ---
-bot.action('add_server', (ctx) => {
-    ctx.answerCbQuery();
-    ctx.replyWithMarkdown(`*📍 أرسل بيانات السيرفر الآن بصيغة:* \`IP:Port\``);
-});
-
+// ========== استلام IP ==========
 bot.on('text', async (ctx) => {
-    const input = ctx.message.text;
-    const userId = ctx.from.id;
+    const text = ctx.message.text;
 
-    if (input.includes(':')) {
-        if (!userServers[userId]) userServers[userId] = [];
-        if (!userServers[userId].includes(input)) {
-            userServers[userId].push(input);
-            ctx.replyWithMarkdown(
-                `✅ *تم حفظ السيرفر بنجاح!*\n📍 العنوان: \`${input}\`\n\n` +
-                `اذهب الآن إلى "سيرفراتي" للتشغيل والتحكم.`,
-                Markup.inlineKeyboard([[Markup.button.callback('🖥️ عرض السيرفرات', 'my_servers')]])
-            );
-        } else {
-            ctx.reply("⚠️ هذا السيرفر موجود بالفعل في قائمتك.");
-        }
-    }
-});
+    if (!text.includes(':')) return;
 
-// --- عرض قائمة سيرفراتي ---
-bot.action('my_servers', (ctx) => {
-    const userId = ctx.from.id;
-    const servers = userServers[userId] || [];
+    const [host, port] = text.split(':');
 
-    if (servers.length === 0) {
-        return ctx.answerCbQuery("❌ ليس لديك سيرفرات مضافة حالياً!", { show_alert: true });
-    }
+    ctx.reply("⏳ جاري الاتصال...");
 
-    const buttons = servers.map(srv => [Markup.button.callback(`🌐 سيرفر: ${srv}`, `manage_${srv}`)]);
-    buttons.push([Markup.button.callback('⬅️ العودة للرئيسية', 'main_menu')]);
-
-    ctx.editMessageText(`*🖥️ قائمة سيرفراتك الخاصة:*\nاختر السيرفر لفتح لوحة التحكم الخاصة به:`, {
-        parse_mode: 'Markdown',
-        ...Markup.inlineKeyboard(buttons)
-    });
-});
-
-// --- لوحة تحكم السيرفر (بدء / إيقاف / حذف) ---
-bot.action(/manage_(.+)/, (ctx) => {
-    const serverIP = ctx.match[1];
-    ctx.answerCbQuery();
-    const isRunning = activeConnections[serverIP] ? "نشط وشغال ✅" : "متوقف حالياً 🛑";
-    
-    ctx.editMessageText(
-        `*⚙️ إعدادات السيرفر:* \`${serverIP}\`\n` +
-        `━━━━━━━━━━━━━━━━━━━━\n` +
-        `📊 *الحالة:* ${isRunning}\n` +
-        `🛡️ *النظام:* Anti-AFK (Auto Version)\n` +
-        `━━━━━━━━━━━━━━━━━━━━`,
-        {
-            parse_mode: 'Markdown',
-            ...Markup.inlineKeyboard([
-                [Markup.button.callback('🚀 تشغيل البوت', `start_bot_${serverIP}`)],
-                [Markup.button.callback('🛑 إيقاف البوت', `stop_bot_${serverIP}`)],
-                [Markup.button.callback('🗑️ حذف السيرفر', `delete_${serverIP}`)],
-                [Markup.button.callback('⬅️ عودة', 'my_servers')]
-            ])
-        }
-    );
-});
-
-// --- نظام تشغيل البوت (AUTO VERSION) ---
-bot.action(/start_bot_(.+)/, async (ctx) => {
-    const serverData = ctx.match[1];
-    const [host, port] = serverData.split(':');
-
-    if (activeConnections[serverData]) {
-        return ctx.answerCbQuery("⚠️ البوت شغال بالفعل!");
-    }
-
-    ctx.answerCbQuery("⚡ جاري الاتصال التلقائي...");
-    
     try {
+
         const client = bedrock.createClient({
             host: host,
             port: parseInt(port),
-            offline: true, // مهم لأتيرنوس (Cracked)
-            username: `MaxBlack_${Math.floor(Math.random() * 9999)}`,
-            skipPing: false // يسمح للمكتبة بمعرفة الإصدار تلقائياً
+            version: 'auto',
+            authflow: new Authflow(
+                "./auth",
+                undefined,
+                {
+                    flow: 'live',
+                    authTitle: 'MinecraftNintendoSwitch'
+                }
+            )
         });
 
-        activeConnections[serverData] = client;
+        activeConnections[ctx.chat.id] = client;
 
         client.on('spawn', () => {
-            console.log(`[CONNECTED] -> ${serverData}`);
-            // منع الـ AFK عن طريق إرسال حزم حركة بسيطة
+            ctx.reply("✅ دخل البوت السيرفر بنجاح!");
+
+            // Anti AFK حركة بسيطة
             setInterval(() => {
-                if (activeConnections[serverData]) {
-                    client.queue('move_player', { runtime_id: client.entityId, position: { x: 0, y: 0, z: 0 }, on_ground: true });
-                }
-            }, 30000);
+                try {
+                    client.write('player_auth_input', {
+                        pitch: 0,
+                        yaw: 0,
+                        position: client.entity.position,
+                        move_vector: { x: 0.1, z: 0 },
+                        head_yaw: 0,
+                        input_data: { jump: true }
+                    });
+                } catch {}
+            }, 20000);
+        });
+
+        client.on('disconnect', (packet) => {
+            ctx.reply("❌ تم فصل البوت من السيرفر");
+            delete activeConnections[ctx.chat.id];
         });
 
         client.on('error', (err) => {
-            console.log(`[MC ERROR] -> ${err.message}`);
-            delete activeConnections[serverData];
+            ctx.reply("❌ خطأ:\n" + err.message);
+            delete activeConnections[ctx.chat.id];
         });
 
-        ctx.editMessageText(
-            `*🚀 تـم تـشـغـيـل الـبـوت بـنـجـاح! *\n` +
-            `━━━━━━━━━━━━━━━━━━━━\n` +
-            `📍 *السيرفر:* \`${serverData}\`\n` +
-            `✅ *الحالة:* متصل ومحمي\n` +
-            `⚙️ *الإصدار:* تلقائي (Auto)\n` +
-            `━━━━━━━━━━━━━━━━━━━━`,
-            Markup.inlineKeyboard([[Markup.button.callback('🛑 إيقاف التشغيل الآن', `stop_bot_${serverData}`)]])
-        );
-
     } catch (e) {
-        ctx.reply("❌ حدث خطأ أثناء محاولة الاتصال التلقائي.");
+        ctx.reply("❌ فشل الاتصال");
     }
 });
 
-// --- إيقاف البوت وحذف الجلسة ---
-bot.action(/stop_bot_(.+)/, (ctx) => {
-    const serverData = ctx.match[1];
-    if (activeConnections[serverData]) {
-        activeConnections[serverData].disconnect();
-        delete activeConnections[serverData];
-        ctx.answerCbQuery("تم الإيقاف 🛑");
-        ctx.editMessageText(`*⚠️ تم إيقاف النظام وفصل الاتصال بـ:* \`${serverData}\``, 
-            Markup.inlineKeyboard([[Markup.button.callback('⬅️ العودة للوحة التحكم', `manage_${serverData}`)]])
-        );
+// ========== إيقاف ==========
+bot.command('stop', (ctx) => {
+    const client = activeConnections[ctx.chat.id];
+    if (client) {
+        client.disconnect();
+        delete activeConnections[ctx.chat.id];
+        ctx.reply("🛑 تم إيقاف البوت");
     } else {
-        ctx.answerCbQuery("الاتصال متوقف بالفعل.");
+        ctx.reply("البوت غير متصل");
     }
 });
 
-// --- حذف السيرفر نهائياً من الذاكرة ---
-bot.action(/delete_(.+)/, (ctx) => {
-    const serverIP = ctx.match[1];
-    const userId = ctx.from.id;
-    userServers[userId] = userServers[userId].filter(s => s !== serverIP);
-    ctx.answerCbQuery("تم الحذف");
-    ctx.editMessageText("*✅ تم حذف السيرفر من قائمتك بنجاح.*", Markup.inlineKeyboard([[Markup.button.callback('⬅️ عودة لسيرفراتي', 'my_servers')]]));
-});
-
-// --- العودة للقائمة الرئيسية ---
-bot.action('main_menu', (ctx) => {
-    ctx.deleteMessage();
-    ctx.replyWithMarkdown(`*🔄 تم الرجوع للقائمة الرئيسية.. أرسل /start*`);
-});
-
-// تشغيل البوت في Replit
-bot.launch().then(() => console.log("🚀 [SYSTEM] MAX BLACK BOT IS ONLINE!"));
-
-// منع توقف السيرفر (Keep-Alive)
-http.createServer((req, res) => { res.write('Bot Active'); res.end(); }).listen(8080);
+bot.launch();
+console.log("✅ BOT ONLINE");
